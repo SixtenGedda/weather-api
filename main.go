@@ -8,6 +8,10 @@ import (
 	"net/http"
 )
 
+func checkcache() {
+
+}
+
 func callAPI(c *gin.Context) {
 	response, err := http.Get(config.API_URL)
 	if err != nil {
