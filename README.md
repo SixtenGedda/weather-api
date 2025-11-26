@@ -1,5 +1,5 @@
 # Weather API service written in go
-A lightweight weather service utilizing Redis for 12h caching and Gin for HTTP routing.
+A lightweight weather service utilizing Redis for 12h caching and Gin for HTTP routing. Part of the [roadmap.sh](https://roadmap.sh/projects/weather-api-wrapper-service) projects.
 
 ## How to run
 
