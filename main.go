@@ -2,63 +2,75 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"github.com/sixtengedda/weather-api/config"
 	"io"
-	"log"
 	"net/http"
+	"os"
+	"time"
 )
 
 func checkcache(c *gin.Context, rdb *redis.Client, ctx context.Context) {
-	key := c.Query("location")
-	value, _ := rdb.Get(ctx, key).Result()
+	location := c.Param("location")
 
-	if value != "" {
-		c.JSON(200, gin.H{
-			"location": key,
-			"weather":  value,
-			"cached":   true,
-		})
+	cachedData, err := rdb.Get(ctx, location).Result()
+
+	if err == nil && cachedData != "" {
+		c.String(http.StatusOK, cachedData)
 		return
 	}
-	c.JSON(404, gin.H{
-		"error": "No weather found for this location",
-	})
+
+	weatherData, err := callAPI(location)
+	if err != nil {
+		fmt.Println("API error:", err)
+		c.JSON(500, gin.H{"error": "Failed to fetch weatherData"})
+		return
+	}
+
+	rdb.Set(ctx, location, weatherData, 12*time.Hour)
+
+	c.String(http.StatusOK, weatherData)
 
 }
 
-func callAPI(c *gin.Context) {
-	response, err := http.Get(config.API_URL)
-	if err != nil {
-		log.Fatal(err)
-	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if response.StatusCode > 299 {
-		log.Fatalf("Response test failed with status code: %d and\nbody: %s\n", response.StatusCode, body)
-	}
-	if err != nil {
-		log.Fatal(err)
-	}
-	c.Data(http.StatusOK, "application/json", body)
+func callAPI(location string) (string, error) {
 
+	apiKey := os.Getenv("API_KEY")
+
+	url := fmt.Sprintf("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/%s/next7days?unitGroup=metric&key=%s&contentType=json", location, apiKey)
+
+	response, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return "", err
+	}
+
+	if response.StatusCode != 200 {
+		return "", fmt.Errorf("API returned status %d: %s", response.StatusCode, string(body))
+	}
+
+	return string(body), nil
 }
 
 func main() {
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "redis:6379",
-		Password: "", // no password
-		DB:       0,  // use default DB
+		Addr: "redis:6379",
 	})
-
 	ctx := context.Background()
-
 	router := gin.Default()
-	router.GET("/weather", func(c *gin.Context) {
+
+	router.GET("/:location", func(c *gin.Context) {
 		checkcache(c, rdb, ctx)
 	})
 
 	router.Run(":8080")
+
 }
